@@ -1,0 +1,11 @@
+name: $(date:yyyyMMdd)$(rev:.r)-$(SourceBranchName)
+
+
+steps:
+- task: CopyFiles@2
+  displayName: Package Deployment files
+  inputs:
+    sourceFolder: deployment
+    targetFolder: $(Build.ArtifactStagingDirectory)\deployment
+
+- task: PublishBuildArtifacts@1  

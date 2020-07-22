@@ -1,0 +1,161 @@
+{
+  "title": "Checks if the WWNC App is running",
+  "name": "WWNC-all-our-microservices-should-be-healthy",
+  "description": "If a pod not running gives health",
+  "secrets": {
+    "humio": {
+      "token": {
+        "type": "env",
+        "key": "HUMIO_INGEST_TOKEN"
+      },
+      "dataspace": {
+        "type": "env",
+        "key": "HUMIO_DATASPACE"
+      }
+    }
+  },
+  "configuration": {
+    "service_url": {
+      "type": "env",
+      "key": "APPLICATION_ENTRYPOINT_URL"
+    }
+  },
+  "steady-state-hypothesis": {
+    "title": "test running pods",
+    "controls": [
+      {
+        "name": "humio-logger",
+        "provider": {
+          "type": "python",
+          "module": "chaoshumio.control",
+          "secrets": [ "humio" ]
+        }
+      }
+    ],
+    "probes": [
+      {
+        "name": "count-pods",
+        "type": "probe",
+        "tolerance": 7,
+        "provider": {
+          "func": "count_pods",
+          "arguments": {
+            "ns": "wwnc",
+            "label_selector": ""
+          },
+          "type": "python",
+          "module": "chaosk8s.pod.probes"
+        }
+      },
+      {
+        "type": "probe",
+        "name": "all-services-are-healthy",
+        "tolerance": true,
+        "provider": {
+          "type": "python",
+          "module": "chaosk8s.probes",
+          "func": "all_microservices_healthy"
+        }
+      },
+      {
+        "type": "probe",
+        "name": "we-can-request-service",
+        "tolerance": 200,
+        "provider": {
+          "type": "http",
+          "timeout": 3,
+          "verify_tls": false,
+          "url": "${service_url}"
+        }
+      },
+      {
+        "name": "Network-microservice-available-and-healthy",
+        "type": "probe",
+        "tolerance": true,
+        "provider": {
+          "func": "microservice_available_and_healthy",
+          "arguments": {
+            "ns": "wwnc",
+            "name": "grundfosgicwwncnetworkapi"
+          },
+          "type": "python",
+          "module": "chaosk8s.probes"
+        }
+      },
+      {
+        "name": "ProxyApi-microservice-available-and-healthy",
+        "type": "probe",
+        "tolerance": true,
+        "provider": {
+          "func": "microservice_available_and_healthy",
+          "arguments": {
+            "ns": "wwnc",
+            "name": "grundfosgicwwncapi"
+          },
+          "type": "python",
+          "module": "chaosk8s.probes"
+        }
+      },
+      {
+        "name": "Data-microservice-available-and-healthy",
+        "type": "probe",
+        "tolerance": true,
+        "provider": {
+          "func": "microservice_available_and_healthy",
+          "arguments": {
+            "ns": "wwnc",
+            "name": "grundfosgicwwncdataapi"
+          },
+          "type": "python",
+          "module": "chaosk8s.probes"
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "terminate-pod",
+      "provider": {
+        "type": "python",
+        "module": "chaosk8s.pod.actions",
+        "func": "terminate_pods",
+        "arguments": {
+          "ns": "wwnc",
+          "name_pattern": "grundfosgicwwncdataapi"
+        }
+      },
+      "pauses": {
+        "after": 10
+      },
+      "ref": "we-can-request-service"
+    },
+    {
+      "type": "action",
+      "name": "drain_node",
+      "provider": {
+        "type": "python",
+        "module": "chaosk8s.node.actions",
+        "func": "drain_nodes",
+        "arguments": {
+          "name": "aks-agentpool-13334051-0"
+        }
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "uncordon_node",
+      "provider": {
+        "type": "python",
+        "module": "chaosk8s.node.actions",
+        "func": "uncordon_node",
+        "arguments": {
+          "name": "aks-agentpool-13334051-0"
+        }
+      },
+      "ref": "drain_node"
+    }
+  ]
+}

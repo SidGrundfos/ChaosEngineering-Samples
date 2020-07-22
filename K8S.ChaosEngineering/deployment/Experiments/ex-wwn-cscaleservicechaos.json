@@ -1,0 +1,147 @@
+{
+  "title": "Checks if the WWNC App is running",
+  "name": "WWNC-all-our-microservices-should-be-healthy",
+  "description": "If a pod not running gives health",
+  "secrets": {
+    "humio": {
+      "token": {
+        "type": "env",
+        "key": "HUMIO_INGEST_TOKEN"
+      },
+      "dataspace": {
+        "type": "env",
+        "key": "HUMIO_DATASPACE"
+      }
+    }
+  },
+  "configuration": {
+    "service_url": {
+      "type": "env",
+      "key": "APPLICATION_ENTRYPOINT_URL"
+    }
+  },
+  "steady-state-hypothesis": {
+    "title": "test running pods",
+    "controls": [
+      {
+        "name": "humio-logger",
+        "provider": {
+          "type": "python",
+          "module": "chaoshumio.control",
+          "secrets": [ "humio" ]
+        }
+      }
+    ],
+    "probes": [
+      {
+        "type": "probe",
+        "name": "all-services-are-healthy",
+        "tolerance": true,
+        "provider": {
+          "type": "python",
+          "module": "chaosk8s.probes",
+          "func": "all_microservices_healthy"
+        }
+      },
+      {
+        "type": "probe",
+        "name": "we-can-request-service",
+        "tolerance": 200,
+        "provider": {
+          "type": "http",
+          "timeout": 3,
+          "verify_tls": false,
+          "url": "${service_url}"
+        }
+      },
+      {
+        "name": "Network-microservice-available-and-healthy",
+        "type": "probe",
+        "tolerance": true,
+        "provider": {
+          "func": "microservice_available_and_healthy",
+          "arguments": {
+            "ns": "wwnc",
+            "name": "grundfosgicwwncnetworkapi"
+          },
+          "type": "python",
+          "module": "chaosk8s.probes"
+        }
+      },
+      {
+        "name": "ProxyApi-microservice-available-and-healthy",
+        "type": "probe",
+        "tolerance": true,
+        "provider": {
+          "func": "microservice_available_and_healthy",
+          "arguments": {
+            "ns": "wwnc",
+            "name": "grundfosgicwwncapi"
+          },
+          "type": "python",
+          "module": "chaosk8s.probes"
+        }
+      },
+      {
+        "name": "Data-microservice-available-and-healthy",
+        "type": "probe",
+        "tolerance": true,
+        "provider": {
+          "func": "microservice_available_and_healthy",
+          "arguments": {
+            "ns": "wwnc",
+            "name": "grundfosgicwwncdataapi"
+          },
+          "type": "python",
+          "module": "chaosk8s.probes"
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "scale-down-provider-service",
+      "provider": {
+        "type": "python",
+        "module": "chaosk8s.actions",
+        "func": "scale_microservice",
+        "arguments": {
+          "name": "grundfosgicwwncapi",
+          "replicas": 0,
+          "ns": "wwnc"
+        }
+      },
+      "pauses": {
+        "after": 30
+      }
+    },
+    {
+      "type": "probe",
+      "ref": "ProxyApi-microservice-available-and-healthy"
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "scale-up-provider-service",
+      "provider": {
+        "type": "python",
+        "module": "chaosk8s.actions",
+        "func": "scale_microservice",
+        "arguments": {
+          "name": "grundfosgicwwncapi",
+          "replicas": 2,
+          "ns": "wwnc"
+        }
+      },
+      "pauses": {
+        "after": 30
+      }
+    },
+    {
+      "type": "probe",
+      "ref": "ProxyApi-microservice-available-and-healthy"
+    }
+  ]
+}
